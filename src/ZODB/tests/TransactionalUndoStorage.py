@@ -76,6 +76,12 @@ class TransactionalUndoStorage:
     def _transaction_newserial(self, oid):
         return self.__serials[oid]
 
+    def _transaction_finish(self, t, oid_list):
+        tid = self._storage.tpc_finish(t)
+        if tid is not None:
+            for oid in oid_list:
+                self.__serials[oid] = tid
+
     def _multi_obj_transaction(self, objs):
         newrevs = {}
         t = Transaction()
@@ -85,7 +91,7 @@ class TransactionalUndoStorage:
             self._transaction_store(oid, rev, data, '', t)
             newrevs[oid] = None
         self._transaction_vote(t)
-        self._storage.tpc_finish(t)
+        self._transaction_finish(t, [x[0] for x in objs])
         for oid in newrevs.keys():
             newrevs[oid] = self._transaction_newserial(oid)
         return newrevs
@@ -218,9 +224,9 @@ class TransactionalUndoStorage:
         self._transaction_store(oid2, revid2, p51, '', t)
         # Finish the transaction
         self._transaction_vote(t)
+        self._transaction_finish(t, [oid1, oid2])
         revid1 = self._transaction_newserial(oid1)
         revid2 = self._transaction_newserial(oid2)
-        self._storage.tpc_finish(t)
         eq(revid1, revid2)
         # Update those same two objects
         t = Transaction()
@@ -230,9 +236,9 @@ class TransactionalUndoStorage:
         self._transaction_store(oid2, revid2, p52, '', t)
         # Finish the transaction
         self._transaction_vote(t)
+        self._transaction_finish(t, [oid1, oid2])
         revid1 = self._transaction_newserial(oid1)
         revid2 = self._transaction_newserial(oid2)
-        self._storage.tpc_finish(t)
         eq(revid1, revid2)
         # Make sure the objects have the current value
         data, revid1 = self._storage.load(oid1, '')
@@ -288,11 +294,12 @@ class TransactionalUndoStorage:
         tid1 = info[1]['id']
         t = Transaction()
         oids = self._begin_undos_vote(t, tid, tid1)
-        self._storage.tpc_finish(t)
+        serial = self._storage.tpc_finish(t)
         # We get the finalization stuff called an extra time:
-        eq(len(oids), 4)
-        unless(oid1 in oids)
-        unless(oid2 in oids)
+        if serial is None:
+            eq(len(oids), 4)
+            unless(oid1 in oids)
+            unless(oid2 in oids)
         data, revid1 = self._storage.load(oid1, '')
         eq(zodb_unpickle(data), MinPO(30))
         data, revid2 = self._storage.load(oid2, '')
@@ -326,7 +333,7 @@ class TransactionalUndoStorage:
         self._transaction_store(oid2, revid2, p52, '', t)
         # Finish the transaction
         self._transaction_vote(t)
-        self._storage.tpc_finish(t)
+        self._transaction_finish(t, [oid1, oid2])
         revid1 = self._transaction_newserial(oid1)
         revid2 = self._transaction_newserial(oid2)
         eq(revid1, revid2)
@@ -346,7 +353,7 @@ class TransactionalUndoStorage:
         self._transaction_store(oid2, revid2, p53, '', t)
         # Finish the transaction
         self._transaction_vote(t)
-        self._storage.tpc_finish(t)
+        self._transaction_finish(t, [oid1, oid2])
         revid1 = self._transaction_newserial(oid1)
         revid2 = self._transaction_newserial(oid2)
         eq(revid1, revid2)
@@ -358,10 +365,11 @@ class TransactionalUndoStorage:
         tid = info[1]['id']
         t = Transaction()
         oids = self._begin_undos_vote(t, tid)
-        self._storage.tpc_finish(t)
-        eq(len(oids), 1)
-        self.failUnless(oid1 in oids)
-        self.failUnless(not oid2 in oids)
+        serial = self._storage.tpc_finish(t)
+        if serial is None:
+            eq(len(oids), 1)
+            self.failUnless(oid1 in oids)
+            self.failUnless(not oid2 in oids)
         data, revid1 = self._storage.load(oid1, '')
         eq(zodb_unpickle(data), MinPO(33))
         data, revid2 = self._storage.load(oid2, '')
@@ -397,7 +405,7 @@ class TransactionalUndoStorage:
         self._transaction_store(oid1, revid1, p81, '', t)
         self._transaction_store(oid2, revid2, p91, '', t)
         self._transaction_vote(t)
-        self._storage.tpc_finish(t)
+        self._transaction_finish(t, [oid1, oid2])
         revid1 = self._transaction_newserial(oid1)
         revid2 = self._transaction_newserial(oid2)
         eq(revid1, revid2)
@@ -683,9 +691,9 @@ class TransactionalUndoStorage:
             tid = p64(i + 1)
             eq(txn.tid, tid)
 
-            L1 = [(rec.oid, rec.tid, rec.data_txn) for rec in txn]
-            L2 = [(oid, revid, None) for _tid, oid, revid in orig
-                  if _tid == tid]
+            L1 = {(rec.oid, rec.tid, rec.data_txn) for rec in txn}
+            L2 = {(oid, revid, None) for _tid, oid, revid in orig
+                  if _tid == tid}
 
             eq(L1, L2)
 
