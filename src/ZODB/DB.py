@@ -104,6 +104,10 @@ class AbstractConnectionPool(object):
 
     size = property(getSize, lambda self, v: self.setSize(v))
 
+    def clear(self):
+        pass
+
+
 class ConnectionPool(AbstractConnectionPool):
 
     def __init__(self, size, timeout=1<<31):
@@ -224,6 +228,11 @@ class ConnectionPool(AbstractConnectionPool):
             self.available[:] = [i for i in self.available
                                  if i[1] not in to_remove]
 
+    def clear(self):
+        while self.pop():
+            pass
+
+
 class KeyedConnectionPool(AbstractConnectionPool):
     # this pool keeps track of keyed connections all together.  It makes
     # it possible to make assertions about total numbers of keyed connections.
@@ -278,6 +287,11 @@ class KeyedConnectionPool(AbstractConnectionPool):
             pool.availableGC()
             if not pool.all:
                 del self.pools[key]
+
+    def clear(self):
+        for pool in self.pools.values():
+            pool.clear()
+        self.pools.clear()
 
     @property
     def test_all(self):
@@ -648,6 +662,11 @@ class DB(object):
 
         self.storage.close()
         del self.storage
+        # clean up references to other DBs
+        self.databases = {}
+        # clean up the connection pool
+        self.pool.clear()
+        self.historical_pool.clear()
 
     def getCacheSize(self):
         return self._cache_size
