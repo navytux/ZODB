@@ -225,6 +225,14 @@ class DemoStorage(ConflictResolvingStorage):
             return self.base.loadBefore(oid, tid)
 
         if result is None:
+            # FIXME wrong: oid could be *deleted* in changes - in this case we
+            # must not look into base. Fix is: result = (data, serial)
+            #
+            # data   = None if oid exists but there is no data (created later or deleted)
+            # serial = 0 (if created later) or serial of delete transaction.
+            #
+            # -> then look at serial and decide whether to go to base.
+
             # The oid *was* in the changes, but there aren't any
             # earlier records. Maybe there are in the base.
             try:
@@ -233,6 +241,7 @@ class DemoStorage(ConflictResolvingStorage):
                 # The oid isn't in the base, so None will be the right result
                 pass
             else:
+                # XXX vvv simply not needed if we don't need to return end_tid
                 if result and not result[-1]:
                     # The oid is current in the base.  We need to find
                     # the end tid in the base by fining the first tid
