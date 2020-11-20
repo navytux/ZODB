@@ -115,7 +115,7 @@ long_description = str(
      read_file("README.rst").decode('latin-1')  + "\n\n" +
      read_file("CHANGES.rst").decode('latin-1')))
 
-tests_require = ['zope.testing', 'manuel']
+tests_require = ['zope.testing', 'manuel', 'zope.testrunner >= 4.4.6']
 
 setup(name="ZODB",
       version=version,
