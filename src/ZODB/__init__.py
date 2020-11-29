@@ -26,3 +26,15 @@ sys.modules['ZODB.PersistentList'] = sys.modules['persistent.list']
 del mapping, list, sys
 
 from ZODB.DB import DB, connection
+
+# set of changes backported by Nexedi.
+nxd_patches = {
+    # Rework Connection MVCC implementation to always call
+    # storage.loadBefore(zconn._txn_time) to load objects.
+    # storage.load() is no longer called at all.
+    # https://github.com/zopefoundation/ZODB/issues/50
+    # https://github.com/zopefoundation/ZODB/pull/56
+    # https://github.com/zopefoundation/ZODB/pull/307
+    # ...
+    'conn:MVCC-via-loadBefore-only',
+}

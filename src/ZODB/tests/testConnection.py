@@ -22,7 +22,8 @@ import unittest
 import transaction
 import ZODB.tests.util
 from ZODB.config import databaseFromString
-from ZODB.utils import p64
+from ZODB.utils import p64, u64, z64, newTid
+from ZODB.POSException import ConflictError
 from persistent import Persistent
 from zope.interface.verify import verifyObject
 from zope.testing import loggingsupport, renormalizing
@@ -521,17 +522,18 @@ class InvalidationTests(unittest.TestCase):
         Transaction ids are 8-byte strings, just like oids; p64() will
         create one from an int.
 
-        >>> cn.invalidate(p64(1), {p1._p_oid: 1})
-        >>> cn._txn_time
-        '\x00\x00\x00\x00\x00\x00\x00\x01'
+        >>> t = u64(cn._txn_time)
+        >>> cn.invalidate(p64(t+1), {p1._p_oid: 1})
+        >>> cn._txn_time == p64(t)
+        True
         >>> p1._p_oid in cn._invalidated
         True
         >>> p2._p_oid in cn._invalidated
         False
 
-        >>> cn.invalidate(p64(10), {p2._p_oid: 1, p64(76): 1})
-        >>> cn._txn_time
-        '\x00\x00\x00\x00\x00\x00\x00\x01'
+        >>> cn.invalidate(p64(t+10), {p2._p_oid: 1, p64(76): 1})
+        >>> cn._txn_time == p64(t)
+        True
         >>> p1._p_oid in cn._invalidated
         True
         >>> p2._p_oid in cn._invalidated
@@ -586,50 +588,28 @@ def doctest_invalidateCache():
 
         >>> connection.invalidateCache()
 
-    Now, if we try to load an object, we'll get a read conflict:
+    This won't have any effect until the next transaction:
 
-        >>> connection.root()['b'].x
-        Traceback (most recent call last):
-        ...
-        ReadConflictError: database read conflict error
+        >>> connection.root()['a']._p_changed
+        0
+        >>> connection.root()['b']._p_changed
+        >>> connection.root()['c']._p_changed
+        1
 
-    If we try to commit the transaction, we'll get a conflict error:
+    But if we sync():
 
-        >>> tm.commit()
-        Traceback (most recent call last):
-        ...
-        ConflictError: database conflict error
+        >>> connection.sync()
 
-    and the cache will have been cleared:
+    All of our data was invalidated:
 
-        >>> print(connection.root()['a']._p_changed)
-        None
-        >>> print(connection.root()['b']._p_changed)
-        None
-        >>> print(connection.root()['c']._p_changed)
-        None
+        >>> connection.root()['a']._p_changed
+        >>> connection.root()['b']._p_changed
+        >>> connection.root()['c']._p_changed
 
-    But we'll be able to access data again:
+    But we can load data as usual:
 
         >>> connection.root()['b'].x
         1
-
-    Aborting a transaction after a read conflict also lets us read data and go
-    on about our business:
-
-        >>> connection.invalidateCache()
-
-        >>> connection.root()['c'].x
-        Traceback (most recent call last):
-        ...
-        ReadConflictError: database read conflict error
-
-        >>> tm.abort()
-        >>> connection.root()['c'].x
-        1
-
-        >>> connection.root()['c'].x = 2
-        >>> tm.commit()
 
         >>> db.close()
     """
@@ -1244,11 +1224,15 @@ class StubStorage:
 
     def __init__(self):
         # internal
+        self._head = z64
         self._stored = []
         self._finished = []
         self._data = {}
         self._transdata = {}
         self._transstored = []
+
+    def lastTransaction(self):
+        return self._head
 
     def new_oid(self):
         oid = str(self._oid)
@@ -1283,7 +1267,11 @@ class StubStorage:
             raise RuntimeError(
                 'StubStorage uses only one transaction at a time')
         self._finished.extend(self._transstored)
+        tid = newTid(None)
         self._data.update(self._transdata)
+        for oid,p in self._transdata.items():
+            self._data[oid] = (p, tid)
+        self._head = tid
         callback(transaction)
         del self._transaction
         self._transdata.clear()
@@ -1294,6 +1282,12 @@ class StubStorage:
             raise TypeError('StubStorage does not support versions.')
         return self._data[oid]
 
+    def loadBefore(self, oid, before):
+        if u64(before) != u64(self._head) + 1:
+            raise ValueError('noncurrent loadBefore not supported')
+        p, serial = self.load(oid)
+        return p, serial, None
+
     def store(self, oid, serial, p, version, transaction):
         if version != '':
             raise TypeError('StubStorage does not support versions.')
@@ -1302,9 +1296,12 @@ class StubStorage:
         elif self._transaction != transaction:
             raise RuntimeError(
                 'StubStorage uses only one transaction at a time')
+        serialOK = self._data.get(oid, z64)
+        if serial != serialOK:
+            raise ConflictError(oid=oid)
         self._stored.append(oid)
         self._transstored.append(oid)
-        self._transdata[oid] = (p, serial)
+        self._transdata[oid] = p
         # Explicitly returning None, as we're not pretending to be a ZEO
         # storage
         return None

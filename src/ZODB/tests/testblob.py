@@ -54,6 +54,8 @@ except NameError:
     import io
     file_type = io.BufferedReader
 
+from . import util
+
 def new_time():
     """Create a _new_ time stamp.
 
@@ -548,10 +550,8 @@ def loadblob_tmpstore():
 
     Now we open a database with a TmpStore in front:
 
-    >>> database.close()
-
     >>> from ZODB.Connection import TmpStore
-    >>> tmpstore = TmpStore(blob_storage)
+    >>> tmpstore = TmpStore(connection)
 
     We can access the blob correctly:
 
@@ -757,7 +757,7 @@ def storage_reusable_suite(prefix, factory,
         "blob_connection.txt",
         "blob_importexport.txt",
         "blob_transaction.txt",
-        setUp=setup, tearDown=zope.testing.setupstack.tearDown,
+        setUp=setup, tearDown=util.tearDown,
         checker=zope.testing.renormalizing.RENormalizing([
             # Py3k renders bytes where Python2 used native strings...
             (re.compile(r"^b'"), "'"),
@@ -780,10 +780,10 @@ def storage_reusable_suite(prefix, factory,
     if test_packing:
         suite.addTest(doctest.DocFileSuite(
             "blob_packing.txt",
-            setUp=setup, tearDown=zope.testing.setupstack.tearDown,
+            setUp=setup, tearDown=util.tearDown,
             ))
     suite.addTest(doctest.DocTestSuite(
-        setUp=setup, tearDown=zope.testing.setupstack.tearDown,
+        setUp=setup, tearDown=util.tearDown,
         checker = ZODB.tests.util.checker + \
             zope.testing.renormalizing.RENormalizing([
               (re.compile(r'\%(sep)s\%(sep)s' % dict(sep=os.path.sep)), '/'),
@@ -823,7 +823,7 @@ def test_suite():
         "blob_tempdir.txt",
         "blobstorage_packing.txt",
         setUp=setUp,
-        tearDown=zope.testing.setupstack.tearDown,
+        tearDown=util.tearDown,
         optionflags=doctest.ELLIPSIS,
         checker=ZODB.tests.util.checker,
         ))
@@ -831,7 +831,7 @@ def test_suite():
         "blob_layout.txt",
         optionflags=doctest.ELLIPSIS|doctest.NORMALIZE_WHITESPACE,
         setUp=setUp,
-        tearDown=zope.testing.setupstack.tearDown,
+        tearDown=util.tearDown,
         checker=ZODB.tests.util.checker +
             zope.testing.renormalizing.RENormalizing([
             (re.compile(r'\%(sep)s\%(sep)s' % dict(sep=os.path.sep)), '/'),

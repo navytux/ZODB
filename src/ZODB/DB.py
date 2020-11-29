@@ -626,12 +626,25 @@ class DB(object):
         noop = lambda *a: None
         self.close = noop
 
+        # go over all connections and prepare them to handle last txn.abort()
+        txn_managers = set() # of conn.transaction_manager
         @self._connectionMap
-        def _(c):
-            if c.transaction_manager is not None:
-                c.transaction_manager.abort()
-            c.afterCompletion = c.newTransaction = c.close = noop
-            c._release_resources()
+        def _(conn):
+            if conn.transaction_manager is not None:
+                for c in six.itervalues(conn.connections):
+                    # Prevent connections from implicitly starting new
+                    # transactions.
+                    c.afterCompletion = c.newTransaction = noop
+                txn_managers.add(conn.transaction_manager)
+            conn.close = noop
+            conn._release_resources()
+
+        # abort transaction managers for all above connections
+        # call txn.abort only after all connections are prepared, as else - if
+        # we call txn.abort() above - some connections could be not yet
+        # prepared and with still active afterCompletion callback.
+        for transaction_manager in txn_managers:
+            transaction_manager.abort()
 
         self.storage.close()
         del self.storage

@@ -121,6 +121,9 @@ class MinimalMemoryStorage(BaseStorage, object):
                 end_tid = None
             else:
                 end_tid = tids[j]
+
+            self.hook(the_oid, self._cur[the_oid], '')
+
             return self._index[(the_oid, tid)], tid, end_tid
 
     def loadSerial(self, oid, serial):
